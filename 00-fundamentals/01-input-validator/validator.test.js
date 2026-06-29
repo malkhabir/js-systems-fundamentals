@@ -1,5 +1,5 @@
 import { describe, it, expect} from 'vitest';
-import Validator from './exercise-01.js'
+import Validator from './validator.js'
 
 const schema = {
     name: { type: 'string', required: true, minLength: 2 },
