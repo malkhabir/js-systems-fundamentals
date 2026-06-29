@@ -132,7 +132,7 @@ class EventEmitter {
     prependListener(event, listener) {
         // Making me realize that we might want to use a queue for the event listeners. Not a set.
         // Naturally chose a Set for the event listeners for O(1) find. Now we might need to move to arrays for 
-        // its queue like impl with shift/unshift
+        // its queue like impl with shift/unshift. Listeners are not planned to be 1000s so a find on a few listeners is not so bad. Maybe sub O(1)
         
         // Need to guard this.
         let events = this.events;
