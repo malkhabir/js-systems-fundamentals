@@ -1,0 +1,1 @@
+This repo is me building core JavaScript runtime and infrastructure primitives from scratch to really understand how these systems work under the hood. The focus is on correctness, edge cases, and clear behavior rather than relying on libraries or autocomplete.
