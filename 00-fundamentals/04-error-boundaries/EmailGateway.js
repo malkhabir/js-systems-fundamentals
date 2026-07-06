@@ -17,7 +17,7 @@ class EmailGateway {
     }
 
     sendWelcomeEmail(user) {
-        const welcomeMsg = "Hey welcome here!" + user.name
+        const welcomeMsg = "Hey welcome here!" + user.displayName
         return this.sendEmail(welcomeMsg)
     }
 
