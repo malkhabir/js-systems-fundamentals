@@ -1,5 +1,5 @@
 import ConnectionState from './ConnectionState.js'
-import transportFactory from './transportFactory.js'
+import TransportError from './TransportError.js'
 
 // Some rough edges here and there. Mostly doing this for learning to model statemachines in js
 // sort of manager. should maybe just move retries and all a level above
@@ -8,7 +8,7 @@ const createConnection = (factory, options) => {
     const initialDelay = options?.initialDelay ?? 100
     const maxDelay = options?.maxDelay ?? 10000
 
-    const connectionTimeout = 100
+    const connectionTimeout = 500 // Time it takes to wait for onOpen from the transport
     let connectionTimerId = null
 
     let state = ConnectionState.DISCONNECTED;
@@ -16,7 +16,6 @@ const createConnection = (factory, options) => {
     let delay = null;
     let reconnectTimerId = null;
     let reconnectCount = 0;
-
 
     let transport = null;
     let lastTransportId = null;
@@ -48,7 +47,7 @@ const createConnection = (factory, options) => {
         }
     }
 
-    const waitForRetry = async () => {
+    const retryTimer = async () => {
         await new Promise((resolve) => {
             if (reconnectCount == 1) {
                 delay = initialDelay
@@ -62,7 +61,7 @@ const createConnection = (factory, options) => {
         })
     }
 
-    const waitForConnection = async () => {
+    const connectionTimer = async () => {
         await new Promise((resolve) => {
             connectionTimerId = setTimeout(() => {
                 resolve()
@@ -76,14 +75,14 @@ const createConnection = (factory, options) => {
         for (let retry = 0; retry < maxRetries; retry++) {
             reconnectCount += 1
 
-            if (lastTransportError) throw new Error(lastTransportError)
-            await waitForRetry()
+            if (lastTransportError) throw new TransportError(lastTransportError)
+            await retryTimer()
             
-            if (lastTransportError) throw new Error(lastTransportError)
+            if (lastTransportError) throw new TransportError(lastTransportError)
             connection.connect()
-
-            if (lastTransportError) throw new Error(lastTransportError)
-            await waitForConnection()
+        
+            if (lastTransportError) throw new TransportError(lastTransportError)
+            await connectionTimer()
 
 
             if (state == ConnectionState.CONNECTED) {
@@ -97,7 +96,7 @@ const createConnection = (factory, options) => {
     }
 
     // Getting called twice so need to be careful causeing bug in here now
-    const disconnect = (reason, cause) => {
+    const disconnect = (cause) => {
         clearReconnect()
         
         transport = null
@@ -106,8 +105,10 @@ const createConnection = (factory, options) => {
         
         state = ConnectionState.DISCONNECTED
 
-        if (cause) {
-            throw new Error(reason || "The connection disconnected for an unknown reason.", { cause })
+        // Transport errors do not require a throw
+        // Everything else is rethrown 
+        if (!(cause instanceof TransportError)) {
+            throw new Error(cause.message || "The connection disconnected for an unknown reason.", { cause })
         }
     }
 
@@ -141,31 +142,33 @@ const createConnection = (factory, options) => {
     const onCloseCB = async (id) => {
         if (state == ConnectionState.CONNECTING) return
         if (state == ConnectionState.DISCONNECTED) return
-        if (id !== lastTransportId) return
+        if (id !== lastTransportId) return // We do not know this transport so won't close
 
         if (state == ConnectionState.CONNECTED) {
             try {
                 await reconnect()
             } catch (error) {
-                if (lastTransportError) {
-                    lastTransportError = null
-                } else {
-                    disconnect(error.message, error)
-                }
+                disconnect(error)
             }
         }
     }
-    const onErrorCB = (error) => {
-        if (state == ConnectionState.DISCONNECTED || 
-            state == ConnectionState.CONNECTING ||
-            state == ConnectionState.RECONNECTING
-        ) {
+    const onErrorCB = async (error, id) => {
+        if (id !== lastTransportId) return // We do not know this transport so won't close
+
+        if (state == ConnectionState.CONNECTED) {
+            const err = new TransportError(error)
+            lastTransportError = err
+            disconnect(err)
             return
         }
-        lastTransportError = error
-        disconnect("An error occured in the transport", error)
+
+        if (state == ConnectionState.CONNECTING || 
+            state == ConnectionState.RECONNECTING) {
+                lastTransportError = error
+                return
+        }
     }
-    const onMessageCB = () => {
+    const onMessageCB = (id) => {
 
     }
     const newTransport = () => {
@@ -187,9 +190,9 @@ const createConnection = (factory, options) => {
         }
 
         try {
+            state = ConnectionState.CONNECTING
             transport = newTransport()
             lastTransportId = transport.id
-            state = ConnectionState.CONNECTING
         } catch (error) {
             state = ConnectionState.DISCONNECTED
             throw error;
@@ -197,12 +200,20 @@ const createConnection = (factory, options) => {
 
         return transport;
     }
-    connection.send = (data) => {
+    connection.send = async (data) => {
+        if (state == ConnectionState.RECONNECTING) {
+            throw new Error("Could not send as the connection is reconnecting.")
+        }
+
+        if (state == ConnectionState.DISCONNECTED) {
+            throw new Error("Could not send as the connection is disconnected.")
+        }
+
         if (state !== ConnectionState.CONNECTED) {
             throw new Error("Cannot send message. Current state is: " + state)
         }
 
-        transport.send(data)
+        await transport.send(data)
     }
     connection.close = () => {
         clearTimeout(reconnectTimerId)

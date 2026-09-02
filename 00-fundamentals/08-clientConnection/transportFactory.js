@@ -5,6 +5,7 @@ function transportFactory() {
     const factory = () => {
         const listeners = { open: [], close: [], error: [], message: [] }
         const id = Math.random(0,1) * 1000
+        const err = new Error("My lovely error")
         const transport = {
             id: id,
             send: (data) => { /* record it, or no-op */ },
@@ -16,6 +17,7 @@ function transportFactory() {
             // test-only hooks, not part of the real transport interface:
             _simulateOpen: () => listeners.open.map(cb => cb(id)),
             _simulateClose: () => listeners.close.map(cb => cb(id)),
+            _simulateError: () => listeners.error.map(cb => cb(err, id))
         }
         lastTransport = transport
         return transport

@@ -110,7 +110,6 @@ describe('ConnectionClient', () => {
         // Simulate a transport connection
         const openPromise = transport._simulateOpen()
 
-
         await new Promise((resolve) => {
             setTimeout(() => {
                 resolve()
@@ -158,5 +157,83 @@ describe('ConnectionClient', () => {
         await transport._simulateClose()
         expect(conn.getState()).toBe(ConnectionState.CONNECTED)
 
+    })
+    it('handles onError fired right after onClose', async () => {
+        const factory = transportFactory()
+        const conn = createConnection(factory, {
+            maxRetries: 2,
+            initialDelay: 200,
+            maxDelay: 500
+        })
+
+        const transport = conn.connect()
+        transport._simulateOpen()
+        expect(conn.getState()).toBe(ConnectionState.CONNECTED)
+
+        // Simulate a drop
+        const closeTransportPromise = transport._simulateClose()
+
+        // Move to wait period
+        await new Promise((resolve) => {
+            setTimeout(() => {
+                resolve()
+            }, 50)
+        })
+        expect(conn.getState()).toBe(ConnectionState.RECONNECTING)
+
+        const transportErrorPromise = transport._simulateError()
+        await new Promise((resolve) => {
+            setTimeout(() => {
+                resolve()
+            }, 1000)
+        })
+
+        expect(conn.getState()).toBe(ConnectionState.DISCONNECTED)
+    })
+    it('handles onClose fired right after onError', async () => {
+        const factory = transportFactory()
+        const conn = createConnection(factory, {
+            maxRetries: 2,
+            initialDelay: 300,
+            maxDelay: 1000
+        })
+
+        const transport = conn.connect()
+        transport._simulateOpen()
+        // Move to wait period
+        await new Promise((resolve) => {
+            setTimeout(() => {
+                resolve()
+            }, 50)
+        })
+        expect(conn.getState()).toBe(ConnectionState.CONNECTED)
+
+        // Simulate a error
+        transport._simulateError()
+
+        expect(conn.getState()).toBe(ConnectionState.DISCONNECTED)
+
+        transport._simulateClose()
+
+        expect(conn.getState()).toBe(ConnectionState.DISCONNECTED)
+    })
+    it('send() while reconnecting throws', async () => {
+        const factory = transportFactory()
+        const conn = createConnection(factory, {
+            maxRetries: 2,
+            initialDelay: 1000,
+            maxDelay: 1000
+        })
+
+        const transport = conn.connect()
+        transport._simulateOpen()
+        expect(conn.getState()).toBe(ConnectionState.CONNECTED)
+
+        // Simulate a error
+        transport._simulateClose()
+
+        expect(conn.getState()).toBe(ConnectionState.RECONNECTING)
+
+        await expect(conn.send()).rejects.toThrow("Could not send as the connection is reconnecting.")
     })
 })
