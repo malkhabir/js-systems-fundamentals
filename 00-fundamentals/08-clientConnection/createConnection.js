@@ -52,7 +52,7 @@ const createConnection = (factory, options) => {
             if (reconnectCount == 1) {
                 delay = initialDelay
             } else {
-                delay = Math.max(delay * 2, maxDelay)
+                delay = Math.min(delay * 2, maxDelay)
             }
 
             reconnectTimerId = setTimeout(async () => {
